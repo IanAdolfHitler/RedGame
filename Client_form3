@@ -1,0 +1,1040 @@
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Drawing;
+using System.IO;
+using System.Net;
+using System.Net.Sockets;
+using System.Resources;
+using System.Text;
+using System.Threading;
+using System.Windows.Forms;
+namespace Red_Game_Client
+{
+    public partial class Form3 : Form
+    {
+        #region Socket Transport 
+        bool IsToForm1 = true;
+        Thread Th;
+        public Socket Form3T { get; set; }
+        #endregion
+        #region List definition
+        List<PictureBox> P1 = new List<PictureBox> { };
+        List<PictureBox> P2 = new List<PictureBox> { };
+        List<PictureBox> MySkill = new List<PictureBox> { };
+        List<PictureBox> XSkill = new List<PictureBox> { };
+        List<Label> Land = new List<Label> { };
+        List<int> Price = new List<int> { 0, 100, 200, 100, 300, 400, 0, 100, 300, 200, 150, 300, 0, 150, 200, 100, 160, 300, 0, 300, 200, 250, 290, 400 };
+        List<string> Point = new List<string> { "1", "2", "3", "4", "5", "6" };
+
+        #endregion
+        private static Random rng = new Random();
+        #region GameSetting
+        public string FightingT;
+        public bool isOCP;
+        bool turn;
+        int Restriction = 1;
+        public string AccountName;
+        public int OCPChampion;//佔領
+        public int CChampion;//挑戰
+        public string OCPName;
+        public string CCName;
+        public string Territory;
+        bool Ability = false;
+        bool End = false;
+        int OCPMoney = 2000;
+        int CPMoney = 2000;
+        int NowMoney = 2000;
+        int Time = 0;
+        int Time2 = 0;
+        int Time3 = 0;
+        int SendEnd = 0;
+        int RoPoint;
+        int Click = 0;
+        int SendCount = 0;
+        public string PTag;
+        PictureBox P;
+        PictureBox PN;
+        Skill SK;
+        private WMPLib.WindowsMediaPlayer wmp;
+        #endregion
+        public Form3()
+        {
+            InitializeComponent();
+            wmp = new WMPLib.WindowsMediaPlayer();
+        }
+        public void Listen()
+        {
+            CharAbility OCCH = new CharAbility(OCPChampion); ;
+            CharAbility CCH = new CharAbility(CChampion);
+            EndPoint ServerEP = Form3T.RemoteEndPoint; //Server 的 EndPoint
+            byte[] B = new byte[1023]; //接收用的 Byte 陣列
+            int inLen = 0; //接收的位元組數目
+            string OriginalString; //接收到的完整訊息
+            string Mode; //命令碼
+            string Msg; //訊息內容(不含命令碼)      
+            while (true)//無限次監聽迴圈
+            {
+                try
+                {
+                    inLen = Form3T.ReceiveFrom(B, ref ServerEP);//收聽資訊並取得位元組數
+                }
+                catch (Exception)
+                {
+                    Form3T.Close();//關閉通訊器
+                    Th.Abort();//刪除執行緒
+                }
+                OriginalString = Encoding.Default.GetString(B, 0, inLen); //翻譯實際訊息(長度inLen)        
+                Mode = OriginalString.Substring(0, 1); //取出命令碼 (第一個字)
+                Msg = OriginalString.Substring(1);    //取出命令碼之後的訊息     
+           
+                string[] MsgList = Msg.Split(',');
+                int ML = MsgList.Length - 1;
+                ResourceManager rm = new ResourceManager(typeof(Red_Game_Client.Properties.Resources));
+                switch (Mode)
+                {
+                    case "M"://
+                        switch (MsgList[ML])
+                        {
+                            case "S":
+                                //SendToServer("M" + FightingT + "," + AccountName + "," + K.Name.ToString() + "," + RoPoint + "," + "S");
+                                string str;
+
+                                if (isOCP == true)
+                                {
+                                    P2[0].BackgroundImage = rm.GetObject("") as Image;
+                                    P2.Remove(P2[0]);
+                                    PictureBox K;
+                                    K = (PictureBox)this.Controls[MsgList[2]];
+                                    P2.Add(K);
+                                    //Record_LBOX.Items.Add("對手骰出了"+MsgList[3]+"點");
+                                    str = "對手骰出了" + MsgList[3] + "點";
+                                    ListBoxChange(Record_LBOX, str);
+                                    CCH.SCP(K);
+                                }
+                                else
+                                {
+                                    P1[0].BackgroundImage = rm.GetObject("") as Image;
+                                    P1.Remove(P1[0]);
+                                    PictureBox K;
+                                    K = (PictureBox)this.Controls[MsgList[2]];
+                                    P1.Add(K);
+                                    str = "對手骰出了" + MsgList[3] + "點";
+                                    ListBoxChange(Record_LBOX, str);
+                                    OCCH.SCP(K);
+                                }
+                                break;
+                            case "U":
+                                try
+                                {
+                                    if (isOCP)
+                                        CPMoney = int.Parse(MsgList[2]);
+                                    else
+                                        OCPMoney = int.Parse(MsgList[2]);
+                                }
+                                catch
+                                {
+                                }
+                                break;
+                            case "E":// SendToServer("M"+FightingT + ","+AccountName + ","+K.Name.ToString() +","+"S");
+                                int Location = int.Parse(MsgList[3]);
+                                if (isOCP == true)
+                                {
+                                    P2[0].BackgroundImage = rm.GetObject("") as Image;
+                                    P2.Remove(P2[0]);
+                                    PictureBox K;
+                                    K = (PictureBox)this.Controls[MsgList[2]];
+                                    P2.Add(K);
+                                    str = "對手飛到了" + Land[Location];
+                                    ListBoxChange(Record_LBOX, str);
+                                    CCH.SCP(K);
+                                }
+                                else
+                                {
+                                    P1[0].BackgroundImage = rm.GetObject("") as Image;
+                                    P1.Remove(P1[0]);
+                                    PictureBox K;
+                                    K = (PictureBox)this.Controls[MsgList[2]];
+                                    P1.Add(K);
+                                    str = "對手飛到了" + Land[Location];
+                                    ListBoxChange(Record_LBOX, str);
+                                    OCCH.SCP(K);
+                                }
+                                break;
+                            case "Z":
+                                str = "你(" + AccountName + ")贏了";
+                                ListBoxChange(Record_LBOX, str);
+                                Dice_Pic.Enabled = false;
+                                break;
+                            case "END":
+                                turn = true;
+                                break;
+                            case "Haunt":
+                                if (isOCP)
+                                    OCPMoney = OCPMoney - 100;
+                                else
+                                    CPMoney = CPMoney - 100;
+                                break;
+                            case "M":
+                                if (isOCP == true)
+                                {
+                                    P2[0].BackgroundImage = rm.GetObject("") as Image;
+                                    P2.Remove(P2[0]);
+                                    PictureBox K;
+                                    K = (PictureBox)this.Controls[MsgList[2]];
+                                    P2.Add(K);
+                                    CCH.SCP(K);
+                                }
+                                else
+                                {
+                                    P1[0].BackgroundImage = rm.GetObject("") as Image;
+                                    P1.Remove(P1[0]);
+                                    PictureBox K;
+                                    K = (PictureBox)this.Controls[MsgList[2]];
+                                    P1.Add(K);
+                                    OCCH.SCP(K);
+                                }
+                                break;
+                            case "Skill":
+                                str = "對手" + MsgList[1] + "使用" + MsgList[2] + "技能";
+                                ListBoxChange(Record_LBOX, str);
+                                break;
+                            case "Situation":
+                                str = "對手" + MsgList[1] + "使用" + MsgList[2] + "技能";
+                                ListBoxChange(Record_LBOX, str);
+                                break;
+                        }
+                        break;
+                    case "B":   //  SendToServer("B" + FightingT + "," + AccountName + "," + locate+","+"Y");//Buy
+                        int Locate = int.Parse(MsgList[2]);
+                        string str2;
+
+                        switch (MsgList[ML])
+                        {
+                            case "Y":
+                                LabelColorChange(Land[Locate], Locate);
+                                str2 = "對手" + MsgList[1] + "在" + Land[Locate].Text + "買了一塊地";
+                                ListBoxChange(Record_LBOX, str2);
+                                break;
+                            case "N":
+                                str2 = "對手" + MsgList[1] + "沒做任何事";
+                                ListBoxChange(Record_LBOX, str2);
+                                break;
+                            case "E":
+                                str2 = "對手在" + Land[Locate].Text;
+                                ListBoxChange(Record_LBOX, str2);
+                                break;
+                            case "M":   //// SendToServer("BY,"+FightingT+"," + AccountName+","+locate); //Buy
+                                LabelColorChange(Land[Locate], Locate);
+                                if (isOCP == true)
+                                {
+                                    OCPMoney = OCPMoney + Price[Locate];
+                                }
+                                else
+                                {
+                                    CPMoney = CPMoney + Price[Locate];
+                                }
+                                str2 = "對手" + MsgList[1] + "以" + Price[Locate] + "收購了" + Land[Locate].Text;
+                                ListBoxChange(Record_LBOX, str2);
+                                break;
+                            case "P":
+                                int PayGet = int.Parse(MsgList[2]);
+                                str2 = "玩家" + AccountName + "付過路費在" + MsgList[3] + "付出" + PayGet + "元";
+                                break;
+                        }
+                        break;
+                    case "3":
+                        break;
+                }
+            }
+        }
+        delegate void LabelColor_Change(Label LB, int Locate);
+        private void LabelColorChange(Label LB, int Locate)
+        {
+            if (this.InvokeRequired)
+            {
+                LabelColor_Change Go = new LabelColor_Change(LabelColorChange);
+                this.Invoke(Go, LB, Locate);
+            }
+            else
+            {
+                Land[Locate].Tag = Locate;
+
+                if (isOCP == true)
+                {
+                    Land[Locate].BackColor = Color.Goldenrod;
+                }
+                else
+                {
+                    Land[Locate].BackColor = Color.FromArgb(192, 192, 255);
+
+                }
+            }
+        }
+        delegate void ListBox_Change(ListBox ListB, string s);
+        private void ListBoxChange(ListBox ListB, string s)
+        {
+            if (this.InvokeRequired)
+            {
+                ListBox_Change Go = new ListBox_Change(ListBoxChange);
+                this.Invoke(Go, ListB, s);
+            }
+            else
+            {
+                ListB.Items.Add(s);
+            }
+        }
+        protected override void OnClosing(CancelEventArgs e) //在視窗關閉時觸發
+        {
+            base.OnClosing(e);
+            if (IsToForm1) //判斷是否要回到Form2
+            {
+                this.DialogResult = DialogResult.Yes; //利用DialogResult傳遞訊息
+                Form2 form2 = new Form2(); //取得父視窗的參考
+                SendToServer("T");
+                SendToServer("P");
+            }
+            else
+            {
+                this.DialogResult = DialogResult.No;
+            }
+        }
+
+        private void RolePic(string Pic, PictureBox[] P)
+        {
+            foreach (PictureBox i in P)
+            {
+                i.Image = Image.FromFile(Pic);
+                i.SizeMode = PictureBoxSizeMode.Zoom;
+                i.Visible = false;
+                i.Enabled = false;
+            }
+        }
+        #region GameFunction
+        private void RollDice(PictureBox P)
+        {
+            SK = new Skill();
+            Random RD = new Random();
+            int Po;
+            if (Ability == true && SK.AbabaHonda(Point, SkillLab.Text) == true)
+            {
+                SK.AbabaHonda(Point, SkillLab.Text);
+                Shuffle(Point);
+
+                Po = RD.Next(0, 6);
+                RoPoint = int.Parse(Point[Po]);
+                Point.Sort();
+                int Index = Point.Count - 1;
+                Point.Sort();
+                while (Index > 0)
+                {
+                    if (Point[Index] == Point[Index - 1])
+                    {
+                        if (Index < Point.Count - 1)
+                            (Point[Index], Point[Point.Count - 1]) = (Point[Point.Count - 1], Point[Index]);
+                        Point.RemoveAt(Point.Count - 1);
+                        Index--;
+                    }
+                    else
+                        Index--;
+                }
+                Ability = false;
+            }
+            else
+            {
+                Po = RD.Next(0, 6);
+                Shuffle(Point);
+                RoPoint = int.Parse(Point[Po]);
+            }
+            Record_LBOX.Items.Add("玩家" + AccountName + "骰出" + RoPoint.ToString() + "點");
+            string PATH;
+            PATH = "_" + RoPoint.ToString();
+            ResourceManager rm = new ResourceManager(typeof(Red_Game_Client.Properties.Resources));
+            //Bitmap PA = new Bitmap(PATH);
+            Dice_Pic.Image = rm.GetObject(PATH) as Image;
+            if (isOCP == true)
+            {
+                RollMove(P1);
+            }
+            else
+            {
+                RollMove(P2);
+            }
+        }
+
+        public static void Shuffle<T>(IList<T> list)
+        {
+            int n = list.Count;
+            while (n > 1)
+            {
+                n--;
+                int k = rng.Next(n + 1);
+                T value = list[k];
+                list[k] = list[n];
+                list[n] = value;
+            }
+        }
+        public void RollMove(List<PictureBox> P)
+        {/*Form3 Frm3= new Form3();
+            List<string> g1 = Frm3.GetType().GetField(P.ToString()).GetValue(Frm3);*/
+            CharAbility SeCh;
+            if (isOCP == true)
+            {
+                SeCh = new CharAbility(OCPChampion);
+            }
+            else
+            {
+                SeCh = new CharAbility(CChampion);
+            }
+            ResourceManager rm = new ResourceManager(typeof(Red_Game_Client.Properties.Resources));
+            int start; // P1_0_Pic
+            int MoveStep = RoPoint;
+            int destination;
+            point_LB.Text = RoPoint.ToString();
+            if (P[0].Name.ToString().Substring(4, 1) != "_")
+            {
+                start = int.Parse(P[0].Name.ToString().Substring(3, 2));
+            }
+            else
+            {
+                start = int.Parse(P[0].Name.ToString().Substring(3, 1));
+            }
+            if (Ability == true && SK.Wine(MoveStep, SkillLab.Text) != 0)
+            {
+                destination = start + SK.Wine(MoveStep, SkillLab.Text);
+                Ability = false;
+            }
+            else
+            {
+                destination = start + MoveStep;
+            }
+            if (destination > 23)
+            {
+                destination = destination - 23;
+                if (isOCP)
+                    OCPMoney = OCPMoney + 1000;
+                else
+                    CPMoney = CPMoney + 1000;
+                Record_LBOX.Items.Add("玩家" + AccountName + "經過起點獲得1000");
+
+            }
+            P[0].BackgroundImage = rm.GetObject("") as Image;
+            P.Remove(P[0]);
+            PictureBox K;
+            if (isOCP == true)
+            {
+                K = (PictureBox)this.Controls["P1_" + destination.ToString() + "_Pic"];
+            }
+            else
+            {
+                K = (PictureBox)this.Controls["P2_" + destination.ToString() + "_Pic"];
+            }
+            P.Add(K);
+            //PictureBox S=(PictureBox)this.Controls["P"+];
+            SeCh.SCP(K);
+            SendToServer("M" + FightingT + "," + AccountName + "," + K.Name.ToString() + "," + RoPoint + "," + "S");
+            if (isOCP)
+                BuyLand(OCPMoney, destination);
+            else
+                BuyLand(CPMoney, destination);
+        }
+        public void BuyLand(int Money, int locate)
+        {
+            SK = new Skill();
+            if (OCPMoney > 0 && CPMoney > 0)
+            {
+                if (Land[locate].Tag.ToString() == "" && Price[locate] != 0)//買地
+                {
+                    TurnLab.Text = Price[locate].ToString();
+
+                    if (Ability == true && SK.hakkaSpirit(Price[locate], P.Tag.ToString()) != 0)
+                    {
+                        DialogResult Result = MessageBox.Show("你使用客家精神要購買" + Land[locate].Text + ",價格為" + SK.hakkaSpirit(Price[locate], P.Tag.ToString()) + "元",
+                       "購買", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+                        if (Result == DialogResult.Yes && isOCP == true)
+                        {
+                            OCPMoney = OCPMoney - Price[locate];
+                            Land[locate].Tag = AccountName;
+                            Land[locate].BackColor = Color.FromArgb(192, 192, 255);
+                            Ability = false;
+                            Record_LBOX.Items.Add("玩家使用客家精神" + AccountName + "購買" + Land[locate].Text);
+                            SendToServer("B" + FightingT + "," + AccountName + "," + locate + "," + "Y"); //Buy
+                        }
+                        else if (Result == DialogResult.Yes && isOCP == false)
+                        {
+                            CPMoney = CPMoney - Price[locate];
+                            Land[locate].Tag = AccountName;
+                            Land[locate].BackColor = Color.Goldenrod;
+                            Ability = false;
+                            SendToServer("B" + FightingT + "," + AccountName + "," + locate + "," + "Y");  //Buy
+                        }
+                        else
+                        {
+                            SendToServer("B" + FightingT + "," + AccountName + "," + locate + "," + "N");  //Buy
+                        }
+
+                    }
+                    else
+                    {
+                        DialogResult Result = MessageBox.Show("你要購買" + Land[locate].Text + ",價格為" + Price[locate] + "元",
+                         "購買", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+                        if (Result == DialogResult.Yes && isOCP == true)
+                        {
+                            OCPMoney = OCPMoney - Price[locate];
+                            Land[locate].Tag = AccountName; //.Tag=玩家
+                            Land[locate].BackColor = Color.FromArgb(192, 192, 255);
+                            Record_LBOX.Items.Add("玩家" + AccountName + "購買" + Land[locate].Text);
+                            SendToServer("B" + FightingT + "," + AccountName + "," + locate + "," + "Y");  //Buy
+                        }
+                        else if (Result == DialogResult.Yes && isOCP == false)
+                        {
+                            CPMoney = CPMoney - Price[locate];
+                            Land[locate].Tag = AccountName;
+                            Land[locate].BackColor = Color.Goldenrod;
+                            SendToServer("B" + FightingT + "," + AccountName + "," + locate + "," + "Y");  //Buy
+                        }
+                        else
+                        {
+                            SendToServer("B" + FightingT + "," + AccountName + "," + locate + "," + "N");  //Buy
+                        }
+                        Ability = false;
+
+                    }
+                }
+                else if (Land[locate].Tag.ToString() == "" && Price[locate] == 0)//四個角
+                {
+                    Event(Land[locate].Text);
+                    //SendToServer("M" + FightingT + "," + AccountName + "," + K.Name.ToString() + "," + Num + "," + "E");
+                }
+                else if (Land[locate].Tag.ToString() == AccountName && Price[locate] == 0)//Upgrade
+                {
+                    //Upgrade(Land[locate].Text);
+                }
+                else if (Land[locate].Tag.ToString() != AccountName && Price[locate] != 0)//付過路費，並問是否收購
+                {
+                    if (isOCP)
+                        Paytolls(OCPMoney, Price[locate], Land[locate].Text);
+                    else
+                        Paytolls(CPMoney, Price[locate], Land[locate].Text);
+                    DialogResult Result = MessageBox.Show("你要收購" + Land[locate].Text + ",價格為" + Price[locate] + "元",
+                   "收購", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+                    if (Result == DialogResult.Yes && isOCP == true)
+                    {
+                        OCPMoney = OCPMoney - Price[locate];
+                        Land[locate].Tag = AccountName;
+                        Land[locate].BackColor = Color.FromArgb(192, 192, 255);
+                        SendToServer("B" + FightingT + "," + AccountName + "," + locate + "," + "M"); //Buy
+                    }
+                    else if (Result == DialogResult.Yes && isOCP == false)
+                    {
+                        CPMoney = CPMoney - Price[locate];
+                        Land[locate].Tag = AccountName;
+                        Land[locate].BackColor = Color.Goldenrod;
+                        SendToServer("B" + FightingT + "," + AccountName + "," + locate + "," + "M");//Buy
+                    }
+                    else
+                    {
+                        SendToServer("B" + FightingT + "," + AccountName + "," + locate + "," + "N");  //Buy
+                    }
+                    Ability = false;
+                }
+            }
+        }
+        public void Paytolls(int Money, int price, string place)
+        {
+            price = price * 3 / 2;
+            if (isOCP)
+                OCPMoney = OCPMoney - price;
+            else
+                CPMoney = CPMoney - price;
+            Record_LBOX.Items.Add("玩家" + AccountName + "付過路費在" + place + "付出" + price + "元");
+
+        }
+        public void Event(string Event) //四個點處發事件
+        {
+            CharAbility SeCh;
+            Random rd = new Random();
+            int Num = rd.Next(0, 24);
+            string str;
+            if (isOCP == true)
+            {
+                SeCh = new CharAbility(OCPChampion);
+            }
+            else
+            {
+                SeCh = new CharAbility(CChampion);
+            }
+            ResourceManager rm = new ResourceManager(typeof(Red_Game_Client.Properties.Resources));
+            if (Event == "開始")
+            {
+                if (isOCP)
+                    OCPMoney = OCPMoney + 500;
+                else
+                    CPMoney = CPMoney + 500;
+            }
+            else if (Event == "客家庄")
+            {
+                if (isOCP)
+                    OCPMoney = OCPMoney - 500;
+                else
+                    CPMoney = CPMoney - 500;
+                Record_LBOX.Items.Add("被客家人搶劫" + AccountName + "損失500元");
+            }
+            else if (Event == "豐年祭")
+            {
+                Random rrd = new Random();
+                int NumR = rrd.Next(0, 3);
+                switch (NumR)
+                {
+                    case 0:
+                        if (isOCP)
+                            OCPMoney = OCPMoney + OCPMoney / 2;
+                        else
+                            CPMoney = CPMoney + CPMoney / 2;
+                        Record_LBOX.Items.Add("豐年祭" + AccountName + "大豐收");
+                        break;
+                    case 1:
+                        if (isOCP)
+                            OCPMoney = OCPMoney + OCPMoney / 5;
+                        else
+                            CPMoney = CPMoney + CPMoney / 5;
+                        Record_LBOX.Items.Add("豐年祭" + AccountName + "小豐收");
+                        break;
+                    case 2:
+                        if (isOCP)
+                            OCPMoney = OCPMoney - OCPMoney / 2;
+                        else
+                            CPMoney = CPMoney - CPMoney / 2;
+                        Record_LBOX.Items.Add("豐年祭" + AccountName + "遭原住民攻擊損失" + (OCPMoney / 2) + "元");
+                        break;
+                }
+            }
+            else if (Event == "當外勞")
+            {
+                SituationLab.Text = "當外勞隨機飛往一個地方";
+                PictureBox A;
+                if (isOCP == true)
+                {
+                    P1[0].BackgroundImage = rm.GetObject("") as Image;
+                    P1.Remove(P1[0]);
+
+                }
+                else
+                {
+                    P2[0].BackgroundImage = rm.GetObject("") as Image;
+                    P2.Remove(P2[0]);
+                }
+                if (isOCP == true)
+                {
+                    A = (PictureBox)this.Controls["P1_" + Num.ToString() + "_Pic"];
+                }
+                else
+                {
+                    A = (PictureBox)this.Controls["P2_" + Num.ToString() + "_Pic"];
+                }
+                if (isOCP == true)
+                {
+                    P1.Add(A);
+                    Record_LBOX.Items.Add("飛到" + Land[Num].Text);
+                }
+                else
+                {
+                    P2.Add(A);
+                    Record_LBOX.Items.Add("飛到" + Land[Num].Text);
+                }
+
+                SeCh.SCP(A);
+                if (isOCP)
+                    BuyLand(OCPMoney, Num);
+                else
+                    BuyLand(CPMoney, Num);
+                if (isOCP == true)
+                {
+                    SendToServer("M" + FightingT + "," + AccountName + "," + P1[0].Name + "M");
+                }
+                else
+                {
+                    SendToServer("M" + FightingT + "," + AccountName + "," + P2[0].Name + "M");
+                }
+            }
+        }
+
+
+        //PictureBox S=(PictureBox)this.Controls["P"+];                
+
+        delegate void Label_Change(Label LB, string Str, string Mode);
+        public void LabelChange(Label LB, string Str, string Mode)
+        {
+            if (this.InvokeRequired)
+            {
+                Label_Change Go = new Label_Change(LabelChange);
+                this.Invoke(Go, LB, Str, Mode);
+            }
+            else
+            {
+                switch (Mode)
+                {
+                    case "T":
+                        LB.Text = Str;
+                        break;
+                    case "V":
+                        bool X = bool.Parse(Str);
+                        LB.Visible = X;
+                        break;
+                }
+            }
+        }
+        #endregion
+        #region SocketFunction
+        public void SendToServer(string Str)//傳送訊息給Server
+        {
+
+            SendCount++;
+            if (SendCount % 2 == 0)
+            {
+                Thread.Sleep(200);
+            }
+            byte[] B = Encoding.Default.GetBytes(Str); //翻譯文字成Byte陣列
+            Form3T.Send(B, 0, B.Length, SocketFlags.None); //傳送訊息給伺服器
+      
+        }
+        #endregion
+        #region BtnClick
+        private void BtnClick()
+        {
+            this.OCSKILL2Pic.Click += new System.EventHandler(this.OCSKILL1Pic_Click);
+            this.CSKILL1Pic.Click += new System.EventHandler(this.OCSKILL1Pic_Click);
+            this.CSKILL2Pic.Click += new System.EventHandler(this.OCSKILL1Pic_Click);
+        }
+        private void Dice_Pic_Click(object sender, EventArgs e)
+        {
+            if (turn == true)
+            {
+               /* if (isOCP == true)
+                {
+                    OCPMoney = OCPMoney - 2000;
+                }*/
+                try
+                {
+                    // ResourceManager rm = new ResourceManager(typeof(Red_Game_Client.Properties.Resources));
+                    //Dice_Pic.BackgroundImage = rm.GetObject("Roll") as Image;
+                    Bitmap BP = new Bitmap("Roll.gif");
+                    Dice_Pic.Image = BP;
+                }
+                catch
+                {
+
+                }
+                EndTurnBtn.Enabled = true;
+                timer1.Enabled = true;
+                timer1.Start();
+                turn = false;
+            }
+            // }
+            //   else
+            //{
+            //     return;
+            //}
+
+        }
+        private void OCSKILL1Pic_Click(object sender, EventArgs e)
+        {
+            SK = new Skill();
+       
+            if (isOCP == true && turn == true && Restriction == 1)
+            {
+                Restriction--;
+                CharAbility OCCh = new CharAbility(OCPChampion);
+                P = (PictureBox)sender;
+                Ability = true;
+                Record_LBOX.Items.Add("使用" + P.Tag.ToString() + "技能");
+                SendToServer("M" + FightingT + "," + AccountName + "," + P.Tag.ToString() + "," + "Skill");
+                SkillLab.Text = P.Tag.ToString();
+                if (SK.hakkaGhost(FightingT, AccountName, SkillLab.Text) == true)
+                {
+                    SendToServer("M" + FightingT + "," + AccountName + "," + "Haunt");
+                }
+            }
+            else if (isOCP == false && turn == true && Restriction == 1)
+            {
+                Restriction--;
+                CharAbility CCh = new CharAbility(CChampion);
+                P = (PictureBox)sender;
+                Ability = true;
+                Record_LBOX.Items.Add("使用" + P.Tag.ToString() + "技能");
+                SendToServer("M" + FightingT + "," + AccountName + "," + P.Tag.ToString() + "," + "Skill");
+                SkillLab.Text = P.Tag.ToString();
+                if (SK.hakkaGhost(FightingT, AccountName, SkillLab.Text) == true)
+                {
+                    SendToServer("M" + FightingT + "," + AccountName + "," + "Haunt");
+                }
+            }
+        }
+        private void timer1_Tick(object sender, EventArgs e)
+        {
+
+            Time = Time + 1;
+            if (Time == 5)
+            {
+                RollDice(Dice_Pic);
+                Time = 0;
+                timer1.Stop();
+            }
+
+        }
+
+        public bool CheckWin(int Money)
+        {
+
+            if (Money <= 0 && isOCP == true)
+            {
+                timer3.Start();
+                return true;
+            }
+            else if (Money <= 0 && isOCP == false)
+            {
+                timer3.Start();
+                return true;
+
+            }
+            return false;
+        }
+        #endregion
+        #region Form_Load
+        private void Form3_Load(object sender, EventArgs e)
+        {
+            if (isOCP == true)
+            {
+                OCPLAB.Text = "占領者(自己)";
+                CPLAB.Text = "挑戰者(敵方)";
+            }
+            else if (isOCP == false)
+            {
+                OCPLAB.Text = "占領者(敵方)";
+                CPLAB.Text = "挑戰者(自己)";
+            }
+            timer2.Start();
+            CheckForIllegalCrossThreadCalls = false;
+            Th = new Thread(Listen);
+            Th.IsBackground = true;
+            Th.Start();
+            this.OCSKILL2Pic.Click += new System.EventHandler(this.OCSKILL1Pic_Click);
+            this.CSKILL1Pic.Click += new System.EventHandler(this.OCSKILL1Pic_Click);
+            this.CSKILL2Pic.Click += new System.EventHandler(this.OCSKILL1Pic_Click);
+       
+            if (isOCP == true)
+            {
+                turn = false;
+            }
+            else
+            {
+                turn = true;
+            }
+            CharAbility OCCh = new CharAbility(OCPChampion);
+            CharAbility CCh = new CharAbility(CChampion);
+            if (isOCP == true)
+            {
+                OCCh.SCP(OCPIC);
+                CCh.SCP(CPIC);
+                OCSKILL1Pic.Enabled = true;
+                OCSKILL2Pic.Enabled = true;
+                MySkill.Add(OCSKILL1Pic);
+                MySkill.Add(OCSKILL2Pic);
+                XSkill.Add(CSKILL1Pic);
+                XSkill.Add(CSKILL2Pic);
+                NameLabOCP.Text = OCPName;
+                NameLabCP.Text = CCName;
+            }
+            else
+            {
+                OCCh.SCP(OCPIC);
+                CCh.SCP(CPIC);
+                CSKILL1Pic.Enabled = true;
+                CSKILL2Pic.Enabled = true;
+                MySkill.Add(CSKILL1Pic);
+                MySkill.Add(CSKILL2Pic);
+                XSkill.Add(OCSKILL1Pic);
+                XSkill.Add(OCSKILL2Pic);
+                NameLabOCP.Text = OCPName;
+                NameLabCP.Text = CCName;
+            }
+            OCCh.SCP(P1_0_Pic);
+            CCh.SCP(P2_0_Pic);
+
+            P1.Add(P1_0_Pic);
+            P2.Add(P2_0_Pic);
+            if (isOCP == true)
+            {
+                OCCh.SkillPic(MySkill);
+                CCh.SkillPic(XSkill);
+            }
+            else
+            {
+                CCh.SkillPic(MySkill);
+                OCCh.SkillPic(XSkill);
+            }
+            Land.Add(start_lb);
+            Land[0].Tag = "";
+            for (int i = 1; i <= 20; i++)
+            {
+                switch (i)
+                {
+                    case 6:
+                        Land.Add(haka_lb);
+                        Land[6].Tag = "";
+                        break;
+                    case 11:
+                        Land.Add(HarvestFestival_lb);
+                        Land[12].Tag = "";
+                        break;
+                    case 16:
+                        Land.Add(ForeignWorker_lb);
+                        Land[18].Tag = "";
+                        break;
+                }
+                Label L = (Label)this.Controls["lb" + i.ToString()];
+                Land.Add(L);
+                L.Tag = "";
+                L.Enabled = false;
+            }
+
+            SituationLab.Text = "";
+
+        }
+        #endregion
+
+        private void EndTurnBtn_Click(object sender, EventArgs e)
+        {
+            // if(Ability==true&&SK.hakkaGhost())
+            SendToServer("M" + FightingT + "," + AccountName + "," + "END");
+            if (isOCP == true)
+            {
+                SendToServer("M" + FightingT + "," + AccountName + "," + P1[0].Name + "," + "M");
+            }
+            else
+            {
+                SendToServer("M" + FightingT + "," + AccountName + "," + P2[0].Name + "," + "M");
+            }
+            EndTurnBtn.Enabled = false;
+            Restriction = 1;
+            SkillLab.Text = "技能";
+
+        }
+
+        private void timer2_Tick(object sender, EventArgs e)
+        {
+            if (turn == false)
+                TurnLab.Text = "敵人的回合";
+            else
+                TurnLab.Text = "你的回合";
+
+            if (isOCP == true)
+            {
+                OCCOINLab.Text = OCPMoney.ToString();
+                CCOINLab.Text = CPMoney.ToString();
+                if (OCPMoney != NowMoney)
+                {
+                    NowMoney = OCPMoney;
+                    SendToServer("M" + FightingT + "," + AccountName + "," + OCPMoney + "," + "U");
+                    if (CheckWin(OCPMoney) == true)
+                    {
+                        SendToServer("M" + FightingT + "," + AccountName + "," + "Z");
+                        Record_LBOX.Items.Add("遊戲結束,你(" + AccountName + ")輸了");
+                      Dice_Pic.Enabled = false;
+                        timer2.Stop();
+                    }
+                }
+            }
+            else if (isOCP == false)
+            {
+                OCCOINLab.Text = OCPMoney.ToString();
+                CCOINLab.Text = CPMoney.ToString();
+                if (CPMoney != NowMoney)
+                {
+                    NowMoney = CPMoney;
+                    SendToServer("M" + FightingT + "," + AccountName + "," + CPMoney + "," + "U");
+                    if (CheckWin(CPMoney) == true)
+                    {
+                        SendToServer("M" + FightingT + "," + AccountName + "," + "Z");
+                        Record_LBOX.Items.Add("遊戲結束,你(" + AccountName + ")輸了");
+                        Dice_Pic.Enabled = false;
+                        timer2.Stop();
+                    }
+                }
+            }
+
+        }
+
+        private void timer3_Tick(object sender, EventArgs e)
+        {
+            SendEnd = SendEnd + 1;
+            if (isOCP == true && SendEnd == 5)
+            {
+                SendToServer("E" + FightingT + "," + OCPName + "," + "X" + "," + CCName);
+                timer3.Stop();
+            }
+            else if (isOCP == false && SendEnd == 5)
+            {
+                SendToServer("E" + FightingT + "," + OCPName + "," + "O");
+                timer3.Stop();
+            }
+
+        }
+
+        private void MusicBtn_Click(object sender, EventArgs e)
+        {
+            System.Media.SoundPlayer sp = new System.Media.SoundPlayer(Properties.Resources.ktv);
+            System.Media.SoundPlayer ind = new System.Media.SoundPlayer(Properties.Resources.Ind1);
+            Click++;
+            if (isOCP == true && OCPChampion == 0)
+            {
+                if (Click == 1)
+                {
+                    sp.Play();
+                }
+                else if (Click == 2)
+                {
+                    sp.Stop();
+                    Click = 0;
+                }
+
+            }
+            else if (isOCP == true && OCPChampion == 1)
+            {
+                if (Click == 1)
+                {
+                    ind.Play();
+                }
+                else if (Click == 2)
+                {
+                    ind.Stop();
+                    Click = 0;
+                }
+            }
+            else if (isOCP == false && CChampion == 0)
+            {
+                if (Click == 1)
+                {
+                    sp.Play();
+                }
+                else if (Click == 2)
+                {
+                    sp.Stop();
+                    Click = 0;
+                }
+            }
+            else if (isOCP == false && CChampion == 1)
+            {
+                if (Click == 1)
+                {
+                    ind.Play();
+                }
+                else if (Click == 2)
+                {
+                    ind.Stop();
+                    Click = 0;
+                }
+            }
+        }
+    }
+}
