@@ -1,0 +1,343 @@
+using System;
+using System.Drawing;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
+using System.Threading;
+using System.Windows.Forms;
+using Red_Game_Client;
+namespace Red_Game_Client
+{
+    public partial class Form2 : Form
+    {       
+        public Socket Form2T{ get; set; }
+        Thread Th;
+        int MySelectedHero;
+        int OPCSelectedHero;//選哪個英雄 紀錄英雄序號
+        int CCSelectedHero;
+        public string AccountName;//我的名字 form1會用到所以設public
+        public string AccountMoney;//form1會用到所以設public
+        //各領地的領主
+        private string[] TerritoryOwner;
+        //各領地的價值
+        private string[] TerritoryPrice;
+        string[] TerritoryName;//地名陣列
+        string FightingT;//戰鬥中的領地
+        Label[] OwnerLB;//Label上領主資料
+        Button[] ChallengeBtn;//到時候可以判斷是按第幾個 其他的也可以以這個為Index
+        string OPCName;//領主的名字
+        string CCName;//挑戰的名字
+        public Form2()
+        {
+            InitializeComponent();
+        }
+        private void Form2_Load(object sender, EventArgs e)
+        {
+            Th = new Thread(Listen);
+            Th.IsBackground = true;
+            Th.Start();
+            #region 梁隆基-英雄選擇
+            Font font = new Font("Times New Roman", 14);
+            // Make image and text data.
+            ImageAndText[] planets =
+            {
+                new ImageAndText(Properties.Resources.ghost,
+                    "Name:客家搞鬼" + '\n' +
+                    "幸運值:50" + '\n' +
+                    "Skill1:Haunt " + '\n' +
+                    "Skill2:Hakka Spirit " + '\n',
+                    font),
+                new ImageAndText(Properties.Resources.UAN,
+                    "Name: 原住民" + '\n' +
+                    "幸運值:55" + '\n' +
+                    "Skill1:Ancestral spirits " + '\n' +
+                    "Skill2:MagicStone " + '\n',
+                    font),
+
+            };
+            #endregion
+            btn1.Click += new System.EventHandler(btn0_Click);
+            btn2.Click += new System.EventHandler(btn0_Click);
+            btn3.Click += new System.EventHandler(btn0_Click);
+            btn4.Click += new System.EventHandler(btn0_Click);
+            btn5.Click += new System.EventHandler(btn0_Click);
+            btn6.Click += new System.EventHandler(btn0_Click);
+            btn7.Click += new System.EventHandler(btn0_Click);
+            label2.Text = AccountName;
+            label3.Text = AccountMoney;
+            label2.BackColor = Color.Transparent;//讓背景色變透明
+            label3.BackColor = Color.Transparent;
+            CharComBoBox.DisplayImagesAndText(planets);
+            CharComBoBox.SelectedIndex = -1;
+            SendToServer("T");
+            SendToServer("P");
+            OwnerLB = new Label[] { ACS0, ACS1, ACS2, ACS3, ACS4, ACS5, ACS6, ACS7 };
+            ChallengeBtn = new Button[] { btn0, btn1, btn2, btn3, btn4, btn5, btn6, btn7 };
+            TerritoryName = new string[] { "HakaNinjia", "Cave", "China", "Indigenous", "Tibet", "ShortBlack", "Han", "Taoyuan" };
+        }
+        public void Listen()
+        {
+            EndPoint ServerEP = Form2T.RemoteEndPoint; //Server 的 EndPoint
+            byte[] B = new byte[1023]; //接收用的 Byte 陣列
+            int inLen = 0; //接收的位元組數目
+            string OriginalString; //接收到的完整訊息
+            string Mode; //命令碼
+            string Msg; //訊息內容(不含命令碼)  
+            while (true)//無限次監聽迴圈
+            {
+                try
+                {
+                    inLen = Form2T.ReceiveFrom(B, ref ServerEP);//收聽資訊並取得位元組數
+                }
+                catch (Exception)
+                {
+                    Form2T.Close();//關閉通訊器
+                    Th.Abort();//刪除執行緒
+                }
+                OriginalString = Encoding.Default.GetString(B, 0, inLen); //翻譯實際訊息(長度inLen)        
+                Mode = OriginalString.Substring(0, 1); //取出命令碼 (第一個字)
+                Msg = OriginalString.Substring(1);    //取出命令碼之後的訊息     
+                string[] MsgList = Msg.Split(',');
+                LabelChange(label5, Mode, "T");
+                switch (Mode)
+                {
+                    case "T"://需要更新領土領主
+                        GetTerritoryOwner(MsgList);
+                        break;
+                    case "P"://需要更新領土價值
+                        GetTerritoryPrice(MsgList);
+                        break;
+                    case "I"://回傳是否同意挑戰
+                        DialogResult Result1 = MessageBox.Show("是否接受" + MsgList[1] + "的挑戰?", "不接受會被至誠...", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+                        if (Result1 == DialogResult.Yes)
+                        {
+                            SendToServer("A" + Msg + "," + AccountName + "," + "Y");
+                        }
+                        else
+                        {
+                            SendToServer("A" + "" + "," + AccountName + "," + "N");
+                        }
+                        break;
+                    case "A"://對方是否同意挑戰
+                        if(MsgList[0]=="Y")
+                        {
+                            FightingT = MsgList[1];
+                            if(MsgList[5]==AccountName)
+                            {
+                                LabelChange(label3, MsgList[3], "T");//更改領主介面的錢
+                            }
+                            else
+                            {
+                                LabelChange(label3, MsgList[4], "T");//更改挑戰者介面的錢
+                            }
+                            DialogResult Result2 = MessageBox.Show("準備好了嗎?", "對戰即將開始", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                            if (Result2 == DialogResult.OK)
+                            {
+                                SendToServer("S" + AccountName + "," + FightingT + "," + MySelectedHero);
+                            }
+                        }
+                        else 
+                        {
+                            if (MsgList[0] == "N") { MessageBox.Show("領主已婉拒對戰"); }
+                            if (MsgList[0] == "O") { MessageBox.Show("領主落跑了，還沒上線"); }
+                            if (MsgList[0] == "G") { MessageBox.Show("領主戰鬥中"); }
+                        }
+                        break;
+                    case "H":
+                        OPCSelectedHero = int.Parse(MsgList[0]);
+                        CCSelectedHero = int.Parse(MsgList[1]);
+                        OPCName = MsgList[2];
+                        CCName = MsgList[3];
+                        if (MsgList[2] == AccountName)
+                        {
+                            Open(OPCSelectedHero, CCSelectedHero, true, OPCName, CCName);
+                        }
+                        else if (MsgList[2] != AccountName)
+                        {
+                            Open(OPCSelectedHero, CCSelectedHero, false, OPCName, CCName);
+                        }
+                        break;
+                    case "6"://伺服器關閉
+                        DialogResult Result3 = MessageBox.Show("伺服器關閉了!", "請重嘗試重新登入", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        if (Result3 == DialogResult.OK)
+                        {
+                            Application.ExitThread();
+                            EndForm2();
+                        }
+                        break;
+                }
+            }
+        }
+        #region 梁隆基-技能
+        private void CharComBoBox_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            ToolTip toolTip1 = new ToolTip();
+            switch (CharComBoBox.SelectedIndex)
+            {
+
+                case 0:
+                    {
+                        CharAbility Ch = new CharAbility(CharComBoBox.SelectedIndex);
+                        // Set up the delays for the ToolTip.
+                        toolTip1.AutoPopDelay = 5000;
+                        toolTip1.InitialDelay = 1000;
+                        toolTip1.ReshowDelay = 500;
+                        // Force the ToolTip text to be displayed whether or not the form is active.
+                        toolTip1.ShowAlways = false;
+                        // Set up the ToolTip text for the Button and Checkbox.
+                        toolTip1.SetToolTip(CharComBoBox, "搞鬼彥伯:詛咒型能力" + '\n' +
+                        "Skill1:Haunt 讓敵人損失100元" + '\n' +
+                        "Skill2:Hakka Spirit 購買房地產價格便宜20%" + '\n');
+                        Ch.SCP(ChampionPB);
+                        break;
+                    }
+                case 1:
+                    {
+                        CharAbility Ch = new CharAbility(CharComBoBox.SelectedIndex);
+                        // Set up the delays for the ToolTip.
+                        toolTip1.AutoPopDelay = 5000;
+                        toolTip1.InitialDelay = 1000;
+                        toolTip1.ReshowDelay = 500;
+                        // Force the ToolTip text to be displayed whether or not the form is active.
+                        toolTip1.ShowAlways = false;
+                        // Set up the ToolTip text for the Button and Checkbox.
+                        toolTip1.SetToolTip(CharComBoBox, "祖靈小子:精神型能力" + '\n' +
+                            "Skill1:AbabaHonda 骰子點數大的機率提升" + '\n' +
+                            "Skill2:Wine 步數增加一點" + '\n');
+                        Ch.SCP(ChampionPB);
+                        break;
+                    }
+
+            }
+            MySelectedHero = CharComBoBox.SelectedIndex;
+        }
+        #endregion
+        private void btn0_Click(object sender, EventArgs e)
+        {
+            Button btn=(Button)sender;
+            int index=0;
+            for(int i =0;i<ChallengeBtn.Length;i++)
+            {
+                if(btn.Name== ChallengeBtn[i].Name)
+                {
+                    index = i;
+                }
+            }
+            if (AccountName != OwnerLB[index].Text)//是否支付挑戰金像向領主挑戰
+            {
+                DialogResult Result = MessageBox.Show("是否支付" + TerritoryPrice[index] + "向" + TerritoryOwner[index] + "挑戰", btn.Text, MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+                if (Result == DialogResult.Yes)
+                {
+                    SendToServer("I" + TerritoryName[index] + "," + AccountName);
+                }
+                else
+                {
+
+                }
+            }
+            else//領主查詢自己的挑戰金
+            {
+                MessageBox.Show("目前挑戰金為" + TerritoryPrice[index]);
+            }
+        }       
+        private void Form2_FormClosing(object sender, FormClosingEventArgs e)
+        {
+            SendToServer("2"+AccountName);
+            Application.ExitThread();
+        }
+        public void SendToServer(string Str)//傳送訊息給Server
+        {
+            byte[] B = Encoding.Default.GetBytes(Str); //翻譯文字成Byte陣列
+            Form2T.Send(B, 0, B.Length, SocketFlags.None); //傳送訊息給伺服器
+        }
+        private void GetTerritoryOwner(string[]Msg)//獲取個領土領主資料
+        {
+            TerritoryOwner = new string[8];
+            for (int i=0;i<OwnerLB.Length;i++)
+            {
+                LabelChange(OwnerLB[i], Msg[i].ToString(), "T");
+            }
+            for (int i = 0; i < TerritoryOwner.Length; i++)
+            {
+                TerritoryOwner[i] = Msg[i];
+            }
+        }
+        private void GetTerritoryPrice(string[] Msg)//獲取個領土價值資料
+        {
+            TerritoryPrice = new string[8];
+            for (int i = 0; i < TerritoryPrice.Length; i++)
+            {
+                TerritoryPrice[i] = Msg[i];
+            }
+        }
+        delegate void Label_Change(Label LB, string Str, string Mode);
+        public void LabelChange(Label LB, string Str, string Mode)//為了解決跨執行續 所以先寫好 但目前只有用到變換文字功能
+        {
+            if (this.InvokeRequired)
+            {
+                Label_Change Go = new Label_Change(LabelChange);
+                this.Invoke(Go, LB, Str, Mode);
+            }
+            else
+            {
+                switch (Mode)
+                {
+                    case "T"://如果是要改變文字
+                        LB.Text = Str;
+                        break;
+                    case "V"://如果是要改變顯示
+                        bool X = bool.Parse(Str);
+                        LB.Visible = X;
+                        break;
+                }
+            }
+        }
+        delegate void OpenF(int OPCC, int CC, bool isOCP, string OPCName, string CCName);
+        private void Open(int OPCC, int CC, bool isOCP, string OPCName, string CCName)
+        {
+            if (this.InvokeRequired)
+            {
+                OpenF Go = new OpenF(Open);
+                this.Invoke(Go, OPCC, CC, isOCP, OPCName,CCName);
+            }
+            else
+            {
+                this.Hide(); //隱藏父視窗
+                Form3 form = new Form3(); //創建子視窗
+                form.Form3T = Form2T;
+                form.OCPChampion =OPCC;//將Listen到的領主選的英雄傳給form3
+                form.CChampion = CC;//將Listen到的挑戰者選的英雄傳給form3
+                form.OCPName = OPCName;//將領主的名字傳給form3
+                form.CCName = CCName;//將挑戰者的名字傳給form3
+                form.isOCP = isOCP;//將自己是不是領主傳給form3
+                form.FightingT = FightingT;//將戰鬥中的領地名傳給form3
+                form.AccountName = AccountName;
+                switch (form.ShowDialog(this))
+                {
+                    case DialogResult.Yes: //Form2中按下ToForm1按鈕
+                        this.Show(); //顯示父視窗
+                        break;
+                    case DialogResult.No: //Form2中按下關閉鈕
+                        this.Close();  //關閉父視窗 (同時結束應用程式)
+                        break;
+                    default:
+                        break;
+                }
+                
+            }
+        }
+        delegate void End_Form2();
+        private void EndForm2()
+        {
+            if (this.InvokeRequired)
+            {
+                End_Form2 Go = new End_Form2(EndForm2);
+                this.Invoke(Go);
+            }
+            else
+            {
+                this.Close(); //隱藏父視窗
+            }
+        }
+    }
+}
