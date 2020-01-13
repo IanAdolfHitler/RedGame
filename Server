@@ -1,0 +1,559 @@
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Data;
+using System.Drawing;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using System.Net;
+using System.Net.Sockets;
+using System.Threading;
+using System.Collections;
+using System.Data.SqlClient;
+
+namespace Red_Game_Server
+{
+    public partial class Form1 : Form
+    {
+        TcpListener Server;
+        Socket Client;
+        Thread Th_Svr;
+        Thread Th_Clt;
+        Hashtable HT = new Hashtable();
+        string ConnetionString;//資料庫連接字串
+        string SQL;
+        ListBox[] TerritoryLBBox;//戰鬥中ListBox集合
+        ListBox L;//選取的戰鬥中ListBox
+        ArrayList P1;//戰鬥中的領主
+        ArrayList P2;//戰鬥中的挑戰者
+        ArrayList P1Hero;//戰鬥中的領主
+        ArrayList P2Hero;//戰鬥中的挑戰者
+        public Form1()
+        {
+            InitializeComponent();
+        }
+
+        private void Form1_Load(object sender, EventArgs e)
+        {
+            ConnetionString = "Server=.;Database=Account;Trusted_Connection=SSPI";
+            P1 = new ArrayList { };
+            P2 = new ArrayList { };
+            P1Hero = new ArrayList { };
+            P2Hero = new ArrayList { };
+            TerritoryLBBox = new ListBox[] { HakaNinjia_LB, Cave_LB, China_LB, Indigenous_LB, Tibet_LB, ShortBlack_LB, HakaNinjia_LB, Taoyuan_LB };
+            textBox1.Text = MyIP().ToString();
+            label1.BackColor = Color.Transparent;
+            label2.BackColor = Color.Transparent;
+            EditTerritory();//編輯介面中領地的領主資料
+            EditTerritoryPriceLB();//編輯介面中領地的挑戰金資料
+        }
+        private string MyIP()
+        {
+            string hn = Dns.GetHostName();
+            IPAddress[] ip = Dns.GetHostEntry(hn).AddressList;
+            foreach (IPAddress it in ip)
+            {
+                if (it.AddressFamily == AddressFamily.InterNetwork)
+                {
+                    return it.ToString();
+                }
+            }
+            return "";
+        }
+        private void ServerSub()
+        {
+            IPEndPoint EP = new IPEndPoint(IPAddress.Parse(textBox1.Text), int.Parse(textBox2.Text));
+            Server = new TcpListener(EP);
+            Server.Start(100);
+            while (true)
+            {
+                Client = Server.AcceptSocket();
+                Th_Clt = new Thread(Listen);
+                Th_Clt.IsBackground = true;
+                Th_Clt.Start();
+            }
+        }
+        private void Listen()
+        {
+            Socket sck = Client;
+            Thread Th = Th_Clt;
+            while (true)
+            {
+                try
+                {
+                    byte[] B = new byte[1023];
+                    int inLen = sck.Receive(B);
+                    string OriginalString = Encoding.Default.GetString(B, 0, inLen);
+                    string Mode = OriginalString.Substring(0, 1);
+                    string Msg = OriginalString.Substring(1);
+                    string[] MsgList = Msg.Split(',');
+                    string name;
+                    string Money;
+                    string sendallStr;
+                    switch (Mode)
+                    {                       
+                        case "R"://註冊帳號
+                            bool Ok = true;//經過撈取資料庫判斷能不能使用這組帳號跟名字
+                            SQL con0 = new SQL();
+                            con0.Connect(ConnetionString);
+                            SQL = "select count(Account) from Profile where Name='" + MsgList[2] + "'";//在資料庫搜尋用戶註冊的名稱
+                            con0.Command(SQL);
+                            int C0 = int.Parse(con0.Count());//計算筆數
+                            if (C0 == 1)//>0表示已經這個名字已經用過了
+                            {
+                                Ok = false;
+                                sck.Send(Encoding.Default.GetBytes("3"));//告訴用戶名稱已被使用
+                            }
+                            SQL con1 = new SQL();
+                            con1.Connect(ConnetionString);
+                            SQL = "select count(Account) from Profile where Account='" + MsgList[0] + "'"; //在資料庫搜尋用戶註冊的帳號
+                            con1.Command(SQL);
+                            int C1 = int.Parse(con1.Count());//計算筆數
+                            if (C1 == 1)//>0表示已經這個帳號已經用過了
+                            {
+                                Ok = false;
+                                sck.Send(Encoding.Default.GetBytes("4"));//告訴用戶帳號已被使用
+                            }
+                            if (Ok == true)//如果名稱跟帳號都沒重複
+                            {
+                                SQL con2 = new SQL();
+                                con2.Connect(ConnetionString);
+                                string s = MsgList[0] + "'" + "," + "'" + MsgList[1] + "'" + "," + "'" + MsgList[2] + "'" + "," + "'" + "1000";
+                                SQL = "insert into Profile (Account,Password,Name,Money) values('" + s + "')";//將用戶資訊加入資料庫
+                                con2.Command(SQL);
+                                con2.Close();
+                                sck.Send(Encoding.Default.GetBytes("5"));//告訴用戶註冊成功
+                            }
+                            break;
+                        case "T"://傳送各領土領主資料
+                            sck.Send(Encoding.Default.GetBytes(TerritoryList()));
+                            break;
+                        case "P"://傳送各領土挑戰金資料
+                            sck.Send(Encoding.Default.GetBytes(PriceList()));
+                            break;
+                        case "I"://寄送邀請給領主
+                            string who = QueryOwner(MsgList[0]);//根據傳送過來的領地名稱找到要挑戰的領主
+                            if (CheckOnline(who) == false)
+                            {
+                                sck.Send(Encoding.Default.GetBytes("A" + "O"));//告訴挑戰者領主不在線上
+                            }
+                            if (CheckGaming(who) == false)
+                            {
+                                sck.Send(Encoding.Default.GetBytes("A" + "G"));//告訴挑戰者領主在戰鬥中
+                            }
+                            else
+                            {
+                                SendTo("I" + Msg, who);//地名,挑戰者
+                            }
+                            break;
+                        case "A"://接受對方請求戰鬥的回應
+                            if (MsgList[3] == "Y")//如果對方接受挑戰
+                            {
+                                int ChallengeP = int.Parse(QueryPrice(MsgList[0]));//根據傳來的地名查看他的挑戰金
+                                L = TerritoryLBBox[GetTerritoryLBBox(MsgList[0].ToString())];//根據傳來的地名看是在哪一個領土的ListBox戰鬥
+                                L.Items.Add(MsgList[2]);//領主的
+                                L.Items.Add(MsgList[1]);//挑戰者的
+                                int P1OriginalM = int.Parse(QueryMoney(MsgList[2]));//領主原本的錢
+                                int P2OriginalM = int.Parse(QueryMoney(MsgList[1])); //挑戰者原本的錢
+                                int P1NewM = P1OriginalM + ChallengeP;//領主收到了挑戰金
+                                int P2NewM = P2OriginalM - ChallengeP;//挑戰者支付挑戰金
+                                try
+                                {
+                                    UpdateAccountMoney(MsgList[2], P1NewM.ToString());//將領主新的錢更新到資料庫
+                                    UpdateAccountMoney(MsgList[1], P2NewM.ToString());//將挑戰者新的錢更新到資料庫
+                                }
+                                catch(Exception E)
+                                {
+                                    E.ToString();
+                                }
+                                sendallStr = "A" + "Y" + "," + MsgList[0] + "," + MsgList[2]+","+P1NewM.ToString() +","+P2NewM.ToString()+","+MsgList[2];
+                                SendALL(sendallStr, L);
+                            }
+                            else
+                            {
+                                SendTo("A" + "N", MsgList[1]);//告訴挑戰者領主拒絕出戰
+                            }
+                            break;
+                        case "S"://玩家準備好了 
+                            try
+                            {                               
+                                L = TerritoryLBBox[GetTerritoryLBBox(MsgList[1].ToString())];//根據傳來的地名看是在哪一個領土的ListBox戰鬥
+                                int Index = 0;
+                                if (MsgList[0] == L.Items[0].ToString())//如果他是領主
+                                {
+                                    P1.Add(MsgList[0]);//將他的名字加入到戰鬥中領主玩家陣列
+                                    P1Hero.Add(MsgList[2]);//將使用的英雄加入陣列
+                                    Index = GoalIndex(P1, MsgList[0]);//取得要傳陣列裡的哪一個
+                                }
+                                else//如果他是挑戰者
+                                {
+                                    P2.Add(MsgList[0]);//將他的名字加入到戰鬥中領主玩家陣列
+                                    P2Hero.Add(MsgList[2]);//將使用的英雄加入陣列
+                                    Index = GoalIndex(P2, MsgList[0]);//取得要傳陣列裡的哪一個
+                                }
+                                if (P1.Count == P2.Count)//因為兩人的新增跟刪除都是同進同出 所以如果數量一樣代表兩人同時準備好
+                                {
+                                    sendallStr = "H" + P1Hero[Index] + "," + P2Hero[Index] + "," + L.Items[0].ToString() + "," + L.Items[1].ToString();
+                                    SendALL(sendallStr, L);
+
+                                }
+                            }
+                            catch (Exception EX)
+                            {
+                                EX.ToString();
+                            }
+                            break;
+                        case "0"://使用者登入
+                            string Account = MsgList[0];
+                            string Password = MsgList[1];
+                            string Count;
+                            SQL con = new SQL();//新增一個SQL實體
+                            con.Connect(ConnetionString);//連接SQL
+                            SQL = "select count(Account) from Profile where Account='" + Account + "' and Password='" + Password + "'";//在資料庫中搜尋使用者傳送的帳號密碼
+                            con.Command(SQL);
+                            Count = con.Count();//計算筆數
+                            if (Count == "1")//看資料庫有沒有符合他的帳號密碼
+                            {
+                                SQL = "select Name from Profile where Account='" + Account + "' and Password='" + Password + "'";
+                                con.Command(SQL);
+                                name = con.Read("Name");//讀取他的名稱                  
+                                con.Close();
+                                if(CheckOnline(name)==true)//如果他已經在線上
+                                {
+                                    sck.Send(Encoding.Default.GetBytes("1"));
+                                }
+                                else
+                                {
+                                    HT.Add(name, sck);
+                                    Online_LB.Items.Add(name);
+                                    Money = QueryMoney(name);//讀取有多少錢
+                                    sck.Send(Encoding.Default.GetBytes("0" + name + "," + Money + "," + "Y"));                                 
+                                }
+                            }
+                            else
+                            {
+                                sck.Send(Encoding.Default.GetBytes("0" + "" + "," + "" + "," + "N"));
+                            }
+                            break;
+                        case "2"://form2玩家離開
+                            HT.Remove(MsgList[0]);
+                            for(int i=0;i<Online_LB.Items.Count;i++)
+                            {
+                                if(Online_LB.Items[i].ToString()==MsgList[0])
+                                {
+                                    Online_LB.Items.RemoveAt(i);
+                                }
+                            }
+                            break;
+                        case "M"://Send(M+,S,+RoPoint+User);  //Move Send(M+,U,+OCPMoney)
+                            L = TerritoryLBBox[GetTerritoryLBBox(MsgList[0].ToString())];
+                            if (MsgList[1] == L.Items[0].ToString())//如果他是領主
+                            {
+                                SendTo(OriginalString, L.Items[1].ToString());
+                            }
+                            else//如果他是挑戰者
+                            {
+
+                                SendTo(OriginalString, L.Items[0].ToString());
+                            }
+                            break;
+                        case "B":   //Send(B+",Y,"+locate+","+AccountName); //Buy
+                            L = TerritoryLBBox[GetTerritoryLBBox(MsgList[0].ToString())];
+                            if (MsgList[1] == L.Items[0].ToString())//如果他是領主
+                            {
+                                SendTo(OriginalString, L.Items[1].ToString());
+                            }
+                            else//如果他是挑戰者
+                            {
+                                SendTo(OriginalString, L.Items[0].ToString());
+                            }                           
+                            break;
+                        case "E"://結束的時候
+                            try
+                            {
+                                int DelIndex;
+                                L = TerritoryLBBox[GetTerritoryLBBox(MsgList[0].ToString())];
+                                DelIndex = GoalIndex(P1, MsgList[1]);//取得要傳陣列裡的哪一個
+                                if (MsgList[2] == "O")
+                                {
+                                    int OriginalPrice = int.Parse(QueryPrice(MsgList[0]));
+                                    int NewPrice = OriginalPrice + 100;
+                                    string NP = NewPrice.ToString();
+                                    UpdateTerritoryPrice(MsgList[0], NP);//領主守城成功 因此挑戰金增加
+                                }
+                                else if (MsgList[2] == "X")
+                                {
+                                    UpdateTerritoryOwner(MsgList[0], MsgList[3]);//領主守城失敗 因此領主更換
+
+                                }
+                                //將兩位玩家移出戰鬥中ListBox
+                                L.Items.RemoveAt(0);
+                                L.Items.RemoveAt(0);
+                                //移出戰鬥中與英雄陣列
+                                P1.RemoveAt(DelIndex);
+                                P2.RemoveAt(DelIndex);
+                                P1Hero.RemoveAt(DelIndex);
+                                P2Hero.RemoveAt(DelIndex);
+                            }
+                            catch(Exception ex)
+                            {
+                                ex.ToString();
+                            }
+
+                            break;                                                    
+                    }
+                    GC.Collect();
+                }
+                catch (Exception ex)
+                {
+                    ex.ToString();
+                }
+            }
+        }
+        private string OnlineList()//紀錄線上使用者
+        {
+            string L = "L";
+            for (int i = 0; i < Online_LB.Items.Count; i++)
+            {
+                L += Online_LB.Items[i];
+                if (i < Online_LB.Items.Count - 1) { L += ","; }
+            }
+            return L;
+        }
+        private string TerritoryList()//紀錄領土佔領者
+        {
+            string T = "T";
+            T += QueryOwner("HakaNinjia");
+            T += ",";
+            T += QueryOwner("Cave");
+            T += ",";
+            T += QueryOwner("China");
+            T += ",";
+            T += QueryOwner("Indigenous");
+            T += ",";
+            T += QueryOwner("Tibet");
+            T += ",";
+            T += QueryOwner("ShortBlack");
+            T += ",";
+            T += QueryOwner("Han");
+            T += ",";
+            T += QueryOwner("Taoyuan");
+            return T;
+        }
+        private string PriceList()//紀錄領土挑戰金
+        {
+            string P = "P";
+            P += QueryPrice("HakaNinjia");
+            P += ",";
+            P += QueryPrice("Cave");
+            P += ",";
+            P += QueryPrice("China");
+            P += ",";
+            P += QueryPrice("Indigenous");
+            P += ",";
+            P += QueryPrice("Tibet");
+            P += ",";
+            P += QueryPrice("ShortBlack");
+            P += ",";
+            P += QueryPrice("Han");
+            P += ",";
+            P += QueryPrice("Taoyuan");
+            return P;
+        }
+        private bool CheckOnline(string name)//檢查是否在線上
+        {
+            int x = 0;
+            for (int i = 0; i < Online_LB.Items.Count; i++)
+            {
+                if (Online_LB.Items[i].ToString() == name)
+                {
+                    x = 1;//如果在線上
+                }
+            }
+            if (x == 0) { return false; }
+            else { return true; }
+        }
+        private bool CheckGaming(string name)//檢查是否在戰鬥中
+        {
+            int x = 0;
+            for (int i = 0; i <P1.Count; i++)
+            {
+                if (P1[i].ToString() == name)
+                {
+                    x = 1;//如果在戰鬥
+                }
+            }
+            if (x == 0) { return true; }
+            else { return false; }
+        }      
+        private void SendTo(string Msg, string User)
+            
+        {
+            byte[] B = Encoding.Default.GetBytes(Msg);
+            Socket Sck = (Socket)HT[User];
+            Sck.Send(B, 0, B.Length, SocketFlags.None);
+        }
+        private void SendALL(string s, ListBox L)//傳送在領土ListBox中戰鬥的所有人(領主跟挑戰者)
+        {
+            for (int i = 0; i < L.Items.Count; i++)
+            {
+                SendTo(s, L.Items[i].ToString());
+            }
+        }
+        private void SendALLOnline(string s)//傳給所有在線上的
+        {
+            for (int i = 0; i < Online_LB.Items.Count; i++)
+            {
+                SendTo(s, Online_LB.Items[i].ToString());
+            }
+        }
+        private int GoalIndex(ArrayList P, string player)//對比P中的Index找出對方對應的序號以作為選擇的Index
+        {
+            int x = 0;
+            for (int i = 0; i < P.Count; i++)
+            {
+                if (P[i].ToString() == player)
+                {
+                    x = i;
+                }
+            }
+            return x;
+        }
+        private string QueryMoney(string Name)//撈Money資料
+        {
+            string Money;
+            SQL con = new SQL(); //建立新的SQL物件
+            con.Connect(ConnetionString);//連接資料庫
+            SQL = "select Money from Profile where Name='" + Name + "'";//SQL語句
+            con.Command(SQL);//執行SQL 命令
+            Money = con.Read("Money");//讀取欄位是Money的資料
+            con.Close();//關閉資料庫連接
+            return Money;//根據給的條件回傳讀取到的錢
+        }
+        private string QueryOwner(string Territory)//查詢領土擁有者
+        {
+            string Owner;
+            SQL con = new SQL();//建立新的SQL物件
+            con.Connect(ConnetionString);//連接資料庫
+            SQL = "select Owner from Territory where TerritoryName='" + Territory + "'";//SQL語句
+            con.Command(SQL);//執行SQL 命令
+            Owner = con.Read("Owner");//讀取欄位是Owner的資料
+            con.Close();//關閉資料庫連接
+            return Owner;//根據給的條件回傳讀取到的擁有者
+        }
+        private string QueryPrice(string Territory)//查詢領土挑戰金
+        {
+            string Price;
+            SQL con = new SQL();//建立新的SQL物件
+            con.Connect(ConnetionString);//連接資料庫
+            SQL = "select Price from Territory where TerritoryName='" + Territory + "'";//SQL語句
+            con.Command(SQL);//執行SQL 命令
+            Price = con.Read("Price");//讀取欄位是Price的資料
+            con.Close();//關閉資料庫連接
+            return Price;//根據給的條件回傳讀取到的挑戰金
+        }
+        private void UpdateAccountMoney(string Name, string Money)//更新個人金錢
+        {
+            SQL con = new SQL();//建立新的SQL物件
+            con.Connect(ConnetionString);//連接資料庫
+            SQL = "UPDATE Profile SET Money = '" + Money + "' WHERE Name ='" + Name + "'";//SQL語句
+            con.Command(SQL); //執行SQL 命令
+            con.Close();//關閉資料庫連接
+        }
+        private void UpdateTerritoryOwner(string Territory, string Name)//更新領土領主
+        {
+            SQL con = new SQL();//建立新的SQL物件
+            con.Connect(ConnetionString);//連接資料庫
+            SQL = "UPDATE Territory SET  Owner = '" + Name + "' WHERE TerritoryName ='" + Territory + "'";//SQL語句
+            con.Command(SQL);//執行SQL 命令
+            con.Close();//關閉資料庫連接
+            EditTerritory();//更新介面上的領主資訊
+            SendALLOnline(TerritoryList());
+        }
+        private void UpdateTerritoryPrice(string Territory, string Price)//更新領土挑戰金
+        {
+            SQL con = new SQL();//建立新的SQL物件
+            con.Connect(ConnetionString);//連接資料庫
+            SQL = "UPDATE Territory SET  Price = '" + Price + "' WHERE TerritoryName ='" + Territory + "'";//SQL語句      
+            con.Command(SQL);//執行SQL 命令
+            con.Close();
+            TerritoryPrice_LB.Items.Clear();
+            EditTerritoryPriceLB();//更新介面上的挑戰金資訊
+            SendALLOnline(PriceList());
+        }
+        private void EditTerritory()//編輯介面上各個領土的領主
+        {
+            HakaOwner_Lb.Text = "領主:" + QueryOwner("HakaNinjia");
+            CaveOwner_Lb.Text = "領主:" + QueryOwner("Cave");
+            ChinaOwner_Lb.Text = "領主:" + QueryOwner("China");
+            IndigenousOwner_Lb.Text = "領主:" + QueryOwner("Indigenous");
+            TibetOwner_Lb.Text = "領主:" + QueryOwner("Tibet");
+            ShortBlackOwner_Lb.Text = "領主:" + QueryOwner("ShortBlack");
+            HanOwner_Lb.Text = "領主:" + QueryOwner("Han");
+            TaoyuanOwner_Lb.Text = "領主:" + QueryOwner("Taoyuan");
+        }
+        private void EditTerritoryPriceLB()//編輯介面上各個領土的挑戰金
+        {
+            TerritoryPrice_LB.Items.Add("哈卡忍者:" + QueryPrice("HakaNinjia"));
+            TerritoryPrice_LB.Items.Add("山頂洞窟:" + QueryPrice("Cave"));
+            TerritoryPrice_LB.Items.Add("中國人民代表大會:" + QueryPrice("China"));
+            TerritoryPrice_LB.Items.Add("原住民代表大會:" + QueryPrice("Indigenous"));
+            TerritoryPrice_LB.Items.Add("西藏大昭寺:" + QueryPrice("Tibet"));
+            TerritoryPrice_LB.Items.Add("矮黑人村:" + QueryPrice("ShortBlack"));
+            TerritoryPrice_LB.Items.Add("台灣韓國瑜競選總部:" + QueryPrice("Han"));
+            TerritoryPrice_LB.Items.Add("桃園客家碉樓:" + QueryPrice("Taoyuan"));
+        }
+        private int GetTerritoryLBBox(string Name)//看要進哪個戰鬥中ListBox 取得序號
+        {
+            int i = 0;
+            switch (Name)
+            {
+                case "HakaNinjia":
+                    i = 0;
+                    break;
+                case "Cave":
+                    i = 1;
+                    break;
+                case "China":
+                    i = 2;
+                    break;
+                case "Indigenous":
+                    i = 3;
+                    break;
+                case "Tibet":
+                    i = 4;
+                    break;
+                case "ShortBlack":
+                    i = 5;
+                    break;
+                case "Han":
+                    i = 6;
+                    break;
+                case "Taoyuan":
+                    i = 7;
+                    break;
+            }
+            return i;
+        }
+        private void Start_btn_Click(object sender, EventArgs e)
+        {
+            CheckForIllegalCrossThreadCalls = false;
+            Th_Svr = new Thread(ServerSub);
+            Th_Svr.IsBackground = true;
+            Th_Svr.Start();
+            Start_btn.Enabled = false;
+        }
+        private void End_btn_Click(object sender, EventArgs e)
+        {
+            Application.ExitThread();
+            SendALLOnline("6");
+        }
+        private void Form1_FormClosing(object sender, FormClosingEventArgs e)
+        {
+            Application.ExitThread();
+            SendALLOnline("6");
+        }
+    }
+}
