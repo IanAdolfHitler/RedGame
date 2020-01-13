@@ -1,0 +1,167 @@
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Data;
+using System.Drawing;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using System.Net;//匯入網路通訊協定相關函數
+using System.Net.Sockets;//匯入網路插座功能函數
+using System.Threading;//匯入多執行緒功能函數
+
+
+namespace Red_Game_Client
+{
+
+    public partial class Form1 : Form
+    {
+        Socket Form1T;
+        Thread Th;
+        public Form1()
+        {
+            InitializeComponent();
+        }
+
+        private void Form1_Load(object sender, EventArgs e)
+        {
+            label1.BackColor = Color.Transparent;//讓背景色變透明
+            label2.BackColor = Color.Transparent;
+            label3.BackColor = Color.Transparent;//讓背景色變透明
+            label4.BackColor = Color.Transparent;
+        }
+        public void Listen()
+        {
+            EndPoint ServerEP = Form1T.RemoteEndPoint; //Server 的 EndPoint
+            byte[] B = new byte[1023]; //接收用的 Byte 陣列
+            int inLen = 0; //接收的位元組數目
+            string OriginalString; //接收到的完整訊息
+            string Mode; //命令碼
+            string Msg; //訊息內容(不含命令碼)      
+            while (true)//無限次監聽迴圈
+            {
+                try
+                {
+                    inLen = Form1T.ReceiveFrom(B, ref ServerEP);//收聽資訊並取得位元組數
+                }
+                catch (Exception)
+                {
+                    Form1T.Close();//關閉通訊器
+                    Th.Abort();//刪除執行緒
+                }
+                OriginalString = Encoding.Default.GetString(B, 0, inLen); //翻譯實際訊息(長度inLen)        
+                Mode = OriginalString.Substring(0, 1); //取出命令碼 (第一個字)
+                Msg = OriginalString.Substring(1);    //取出命令碼之後的訊息     
+                string[] MsgList = Msg.Split(',');
+                switch (Mode)
+                {
+                    case "0":
+                        if (MsgList[2] == "Y")
+                        {
+                            Open(MsgList[0].ToString(), MsgList[1].ToString());
+                        }
+                        else
+                        {
+                            MessageBox.Show("帳號或密碼錯誤");
+                        }
+                        break;
+                    case "1"://如果帳號已經登入了 避免重複登入
+                        MessageBox.Show("帳號已登入!");
+                        break;
+                    case "3"://如果帳號已經登入了 避免重複登入
+                        MessageBox.Show("此名稱已被使用!");
+                        break;
+                    case "4"://如果帳號已經登入了 避免重複登入
+                        MessageBox.Show("此帳號已被使用!");
+                        break;
+                    case "5"://如果帳號已經登入了 避免重複登入
+                        MessageBox.Show("註冊成功!");
+                        break;
+                }
+            }
+        }
+         private void Login_btn_Click(object sender, EventArgs e)
+        {
+            string IP = textBox1.Text;//伺服器IP
+            int Port = int.Parse(textBox2.Text);  //伺服器Port
+            if (Login_btn.Text == "登入")
+            {
+                try
+                {
+                    IPEndPoint EP = new IPEndPoint(IPAddress.Parse(IP), Port);
+                    Form1T = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+                    Form1T.Connect(EP);
+                    Th = new Thread(Listen);
+                    Th.IsBackground = true;
+                    Th.Start();
+                    SendToServer("0" + textBox3.Text + "," + textBox4.Text);
+                }
+                catch
+                {
+                    MessageBox.Show("伺服器未開放!");
+                }
+            }
+        }
+
+        private void Register_btn_Click(object sender, EventArgs e)
+        {
+            RegisterGBox.Visible = true;
+        }
+
+        private void Finish_btn_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                RegisterGBox.Visible = false;
+                string IP = textBox1.Text;//伺服器IP
+                int Port = int.Parse(textBox2.Text);  //伺服器Port
+                IPEndPoint EP = new IPEndPoint(IPAddress.Parse(IP), Port);
+                Form1T = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+                Form1T.Connect(EP);
+                Th = new Thread(Listen);
+                Th.IsBackground = true;
+                Th.Start();
+                string s = textBox5.Text +  "," +  textBox6.Text + "," + textBox7.Text ;
+                SendToServer("R" + s);
+            }
+            catch
+            {
+                MessageBox.Show("伺服器未開放!");
+            }
+        }
+        private void SendToServer(string Str)
+        {
+            byte[] B = Encoding.Default.GetBytes(Str); //翻譯文字成Byte陣列
+            Form1T.Send(B, 0, B.Length, SocketFlags.None); //傳送訊息給伺服器
+        }
+        delegate void OpenF(string s, string s2);
+        private void Open(string s, string s2)
+        {
+            if (this.InvokeRequired)
+            {
+                OpenF Go = new OpenF(Open);
+                this.Invoke(Go, s, s2);
+            }
+            else
+            {
+                this.Hide(); //隱藏父視窗
+                Form2 form = new Form2(); //創建子視窗
+                form.Form2T =  Form1T;//將form1建立的Socket讓form2參考
+                form.AccountName = s;//將form1讀到的名字傳入from2
+                form.AccountMoney = s2;//將form1讀到的錢傳入from2
+                switch (form.ShowDialog(this))
+                {
+                    case DialogResult.Yes: //Form2中按下ToForm1按鈕
+                        this.Show(); //顯示父視窗
+                        break;
+                    case DialogResult.No: //Form2中按下關閉鈕
+                        this.Close();  //關閉父視窗 (同時結束應用程式)
+                        break;
+                    default:
+                        break;
+                }
+            }
+        }
+    }
+}
