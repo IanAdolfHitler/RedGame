@@ -1,0 +1,56 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+
+namespace Red_Game_Client
+{
+    class Skill
+    {
+
+        public int hakkaSpirit(int HousePrice, string PTag)
+        {
+            if (PTag == "HakkaSpirit")
+            {
+                HousePrice = HousePrice - (HousePrice / 5);
+                return HousePrice;
+            }
+            else
+            {
+                return 0;
+            }
+
+        }
+        public bool hakkaGhost(string FightingT, string AccountName, string PTag)
+        {
+            if (PTag == "Haunt")
+            {
+                
+                return true;
+            }
+            return false;
+        }
+        public bool AbabaHonda(List<string> Point, string PTag)
+        {
+            if (PTag == "AbabaHonda")
+            {
+                Point.Add("5");
+                Point.Add("5");
+                Point.Add("6");
+                return true;
+            }
+            return false;
+        }
+        public int Wine(int Point, string PTag)
+        {
+            if (PTag == "Wine")
+            {
+                Point = Point + 1;
+                return Point;
+            }
+            return 0;
+        }
+    }
+}
